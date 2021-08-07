@@ -18,7 +18,7 @@
 //MAC주소 길이
 #define MAC_ALEN 6
 #define MAC_ADDR_FMT_ARGS(addr) addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
-#define MESSAGE_SIZE 20
+#define MESSAGE_SIZE 100
 #define CARRY 65536
 #define TRUE 1
 #define FALSE 0
@@ -163,12 +163,13 @@ int warning(const u_char* buf, char* site) {
     libnet_tcp_hdr *tcp_hdr = (libnet_tcp_hdr *)(packet + (ip_hdr_v4->ip_hl*4));
     int data_size = ntohs(ip_hdr_v4->ip_len) - ip_hdr_v4->ip_hl*4 - tcp_hdr->th_off*4;
 
-    printf("[is it warning?] data size : %d ip_hdr_v4 : %d \n", data_size, ip_hdr_v4->ip_hl*4);
+    //printf("[is it warning?] data size : %d ip_hdr_v4 : %d \n", data_size, ip_hdr_v4->ip_hl*4);
 
     if(data_size != 0){
         packet = packet + tcp_hdr->th_off*4 + ip_hdr_v4->ip_hl*4;
 
         if (packet[0] == 'G'){ //POST? "GET "로 필터링하기
+            /*
             printf("\n==========http request ===========\n");
             printf("\n");
             for (i = 0; i < data_size; i++) {
@@ -177,7 +178,7 @@ int warning(const u_char* buf, char* site) {
                 printf("%02X ", packet[i]);
             }
             printf("\n");
-
+            */
             char* ptr = strstr((char*)packet, "Host: "); //strstr,, Host: 없으면 \0 나올때까지 계속감 -> strnstr
             if (ptr !=NULL){
                 ptr = ptr + strlen("Host: ");
@@ -233,14 +234,12 @@ int GetInterfaceMacAddress(const char *ifname, Mac *mac_addr, Ip* ip_addr){
     return 0;
 }
 void SendPacket(pcap_t* handle, const u_char* packet, int packet_size){
-    printf("================== sending packet ==================\n");
+    //printf("================== sending packet ==================\n");
     //dump((u_char*)packet, packet_size);
 
     int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(packet), packet_size);
     if (res != 0) {
         fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
-    }else{
-        printf("Sending block packet..\n");
     }
 }
 
@@ -338,7 +337,7 @@ void RelayPacket(pcap_t* handle, pcap_pkthdr* header, EthArpPacket* eth_hdr, Mac
         eth_hdr->eth_.dmac_ = Mac(*MAC_GATEWAY);
         eth_hdr->eth_.smac_ = Mac(*MAC_ADD);
 
-        printf("relay to target... ether type : 0x%04X\n", ntohs(eth_hdr->eth_.type_));
+        //printf("relay to target... ether type : 0x%04X\n", ntohs(eth_hdr->eth_.type_));
 
         //relay to target
         int res = pcap_sendpacket(handle, reinterpret_cast<const u_char*>(eth_hdr), header->len);
@@ -359,13 +358,17 @@ void backward_fin(Mac MAC_ADD, pcap_t* handle, const u_char* buf){
 
     int packet_size = sizeof(libnet_ethernet_hdr) + ntohs(ip_hdr_v4->ip_len);
 
+    printf("================== send redirect packet ==================\n");
     printf("================== origin packet ==================\n");
+
+    printf("packet size : %d", packet_size);
     dump((u_char*)buf, packet_size);
 
     EthPacket* packet = (EthPacket*)malloc(sizeof(EthPacket));
-    memcpy(packet, buf, packet_size);
+    memcpy(packet, buf, sizeof(EthPacket));
 
-    std::string message = "blocked\r\n";
+    std::string message = "HTTP/1.0 302 Redirect\r\nLocation: http://facebook.com\r\n\r\n";
+    //std::string message = "hihi\r\n";
 
     //set ether header
     packet->eth_.dmac_ = Mac(eth_hdr->ether_shost);//d_mac is org-packet
@@ -430,7 +433,7 @@ void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* 
             time_t time2 = time(NULL);
             if (time2 - time1 >= 1){
                 //attack packet to victim again
-                printf("regularly attack.. time gap : %02ld\n", time2-time1);
+                //printf("regularly attack.. time gap : %02ld\n", time2-time1);
                 SendPacket(handle, (u_char*)&attack_packet, sizeof(EthArpPacket));
                 time1 = time2;
             }
@@ -467,19 +470,19 @@ void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* 
             }
 
             if (ntohs(eth_hdr->ether_type) != ETHERTYPE_IP){
-                printf("PASS! type : %X\n", ntohs(eth_hdr->ether_type));
+                //printf("PASS! type : %X\n", ntohs(eth_hdr->ether_type));
                 continue;
             }
             if(ip_hdr_v4->ip_p != IPPROTO_TCP){
-                printf("PASS! protocol : %X\n", ip_hdr_v4->ip_p);
+                //printf("PASS! protocol : %X\n", ip_hdr_v4->ip_p);
                 continue;
             }
 
-            printf("%u bytes captured\n", header->caplen);
+            //printf("%u bytes captured\n", header->caplen);
 
             //is it warning?? check == 1 -> True check == 0 -> False
             if(warning(out_packet + sizeof(libnet_ethernet_hdr), pattern)){
-                backward_fin(*MAC_ADD, pcap, (u_char*)&out_packet);
+                backward_fin(*MAC_ADD, pcap, (u_char*)out_packet);
             }
             //relay sender to target
             RelayPacket(handle, header, (EthArpPacket *)eth_hdr, MAC_ADD, MAC_GATEWAY, MAC_SOURCE);
@@ -514,13 +517,13 @@ void thread_task(const char *dev, Ip s_ip, Ip t_ip, Ip my_ip, Mac MAC_ADD, char*
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 4) {
+    if (argc < 5) {
         usage();
         return -1;
     }
 
     char* dev = argv[1];
-    char* pattern = argv[3];
+    char* pattern = argv[4];
 
     Mac MAC_ADD;
     Ip IP_ADD;
