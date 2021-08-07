@@ -408,6 +408,9 @@ void backward_fin(Mac MAC_ADD, Mac MAC_TARGET, pcap_t* handle, const u_char* buf
     //send redirect packet
     SendPacket(handle, (const u_char*)packet, packet_size);
     free(packet);
+
+    //redirect complete
+    exit(1);
 }
 
 
