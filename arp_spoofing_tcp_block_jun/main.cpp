@@ -2,8 +2,8 @@
 #include <pcap.h>
 #include "ethhdr.h"
 #include "arphdr.h"
-#include <net/if.h>
-#include <net/if_arp.h>
+//#include <net/if.h>
+//#include <net/if_arp.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <stdint.h>
@@ -58,8 +58,8 @@ struct EthPacket{
 #pragma pack(pop)
 
 void usage() {
-    printf("syntax: arp_spoofing_tcp_block <interface> <sender ip> <target ip> <pattern>\n");
-    printf("sample: arp_spoofing_tcp_block wlan0 192.168.10.2 192.168.10.1 test.gilgil.net\n");
+    printf("syntax: arp_spoofing_tcp_block <interface> <sender ip> <target ip>\n");
+    printf("sample: arp_spoofing_tcp_block wlan0 192.168.10.2 192.168.10.1\n");
 }
 
 //for test
@@ -155,7 +155,7 @@ uint16_t calTCPChecksum(uint8_t *data,int dataLen) //data는 ip헤더 시작위�
 }
 
 //find warning site
-int warning(const u_char* buf, char* site) {
+int warning(const u_char* buf) {
     const u_char* packet = buf;
 
     libnet_ipv4_hdr *ip_hdr_v4 = (libnet_ipv4_hdr*)(packet);
@@ -166,30 +166,8 @@ int warning(const u_char* buf, char* site) {
 
     if(data_size != 0){
         packet = packet + tcp_hdr->th_off*4 + ip_hdr_v4->ip_hl*4;
-
         if (packet[0] == 'G'){ //POST? "GET "로 필터링하기
-            /*
-            printf("\n==========http request ===========\n");
-            printf("\n");
-            for (i = 0; i < data_size; i++) {
-                if (i != 0 && i % 16 == 0)
-                    printf("\n");
-                printf("%02X ", packet[i]);
-            }
-            printf("\n");
-            */
-            char* ptr = strstr((char*)packet, "Host: "); //strstr,, Host: 없으면 \0 나올때까지 계속감 -> strnstr
-            if (ptr !=NULL){
-                ptr = ptr + strlen("Host: ");
-                ptr = strtok(ptr, "\r\n"); //strtok도 마찬가지 없으면 \0 나올때까지 계속감 ~ 수동으로 찾기
-                printf("\nHOST_BY_JUN : %s\n", ptr);
-                printf("warning site : %s\n", site);
-
-                if(strncmp(ptr, site, strlen(site)) == 0){
-                    printf("find it %s\n", ptr);
-                    return TRUE;
-                }
-            }
+            return TRUE;
         }
     }
     return FALSE;
@@ -414,7 +392,7 @@ void backward_fin(Mac MAC_ADD, Mac MAC_TARGET, pcap_t* handle, const u_char* buf
 }
 
 
-void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* MAC_ADD, Mac* MAC_SOURCE, Mac* MAC_GATEWAY, char* pattern){
+void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* MAC_ADD, Mac* MAC_SOURCE, Mac* MAC_GATEWAY){
     //time to send regularpacket
     time_t time1 = time(NULL);
 
@@ -488,7 +466,7 @@ void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* 
             //printf("%u bytes captured\n", header->caplen);
 
             //is it warning?? check == 1 -> True check == 0 -> False
-            if(warning(out_packet + sizeof(libnet_ethernet_hdr), pattern)){
+            if(warning(out_packet + sizeof(libnet_ethernet_hdr))){
                 backward_fin(*MAC_ADD, *MAC_GATEWAY, pcap, (u_char*)out_packet, &attack_packet);
             }
             //relay sender to target
@@ -496,7 +474,7 @@ void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* 
     }
 }
 
-void thread_task(const char *dev, Ip s_ip, Ip t_ip, Ip my_ip, Mac MAC_ADD, char* pattern){
+void thread_task(const char *dev, Ip s_ip, Ip t_ip, Ip my_ip, Mac MAC_ADD){
     //pcap for getpacket
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t* pcap = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
@@ -517,20 +495,19 @@ void thread_task(const char *dev, Ip s_ip, Ip t_ip, Ip my_ip, Mac MAC_ADD, char*
     Mac MAC_TARGET;
 
     //attack packet
-    ArpSpoofing(pcap, handle, my_ip, s_ip, t_ip, &MAC_ADD, &MAC_SOURCE, &MAC_TARGET, pattern);
+    ArpSpoofing(pcap, handle, my_ip, s_ip, t_ip, &MAC_ADD, &MAC_SOURCE, &MAC_TARGET);
 
     pcap_close(pcap);
     pcap_close(handle);
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 5) {
+    if (argc < 4) {
         usage();
         return -1;
     }
 
     char* dev = argv[1];
-    char* pattern = argv[4];
 
     Mac MAC_ADD;
     Ip IP_ADD;
@@ -548,11 +525,7 @@ int main(int argc, char* argv[]) {
             Ip t_ip(argv[i+3]);
 
             //have to add thread
-            thread_task(dev, s_ip,t_ip,IP_ADD,MAC_ADD,pattern);
+            thread_task(dev, s_ip,t_ip,IP_ADD,MAC_ADD);
         }
     }
-
-
-
-
 }
