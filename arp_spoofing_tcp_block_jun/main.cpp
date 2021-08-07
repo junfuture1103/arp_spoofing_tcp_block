@@ -156,7 +156,6 @@ uint16_t calTCPChecksum(uint8_t *data,int dataLen) //data는 ip헤더 시작위�
 
 //find warning site
 int warning(const u_char* buf, char* site) {
-    int i;
     const u_char* packet = buf;
 
     libnet_ipv4_hdr *ip_hdr_v4 = (libnet_ipv4_hdr*)(packet);
@@ -351,7 +350,7 @@ void RelayPacket(pcap_t* handle, pcap_pkthdr* header, EthArpPacket* eth_hdr, Mac
     }
 }
 
-void backward_fin(Mac MAC_ADD, pcap_t* handle, const u_char* buf){
+void backward_fin(Mac MAC_ADD, Mac MAC_TARGET, pcap_t* handle, const u_char* buf, EthArpPacket* attack_packet){
     libnet_ethernet_hdr *eth_hdr = (libnet_ethernet_hdr*)buf;
     libnet_ipv4_hdr *ip_hdr_v4 = (libnet_ipv4_hdr*)(buf + sizeof(libnet_ethernet_hdr));
     libnet_tcp_hdr *tcp_hdr = (libnet_tcp_hdr*)(buf + sizeof(libnet_ethernet_hdr) + (ip_hdr_v4->ip_hl*4));
@@ -402,6 +401,11 @@ void backward_fin(Mac MAC_ADD, pcap_t* handle, const u_char* buf){
     packet_size = sizeof(libnet_ethernet_hdr) + htons(packet->ip_v4_.ip_len);
     dump((u_char*)packet, packet_size);
 
+    //send ARP recover packet
+    EthArpPacket Recover_packet = *attack_packet;
+    Recover_packet.arp_.smac_ = Mac(MAC_TARGET);
+    SendPacket(handle, (const u_char*)&Recover_packet, sizeof(EthArpPacket));
+    //send redirect packet
     SendPacket(handle, (const u_char*)packet, packet_size);
     free(packet);
 }
@@ -482,7 +486,7 @@ void ArpSpoofing(pcap_t* pcap, pcap_t* handle, Ip my_ip, Ip s_ip, Ip t_ip, Mac* 
 
             //is it warning?? check == 1 -> True check == 0 -> False
             if(warning(out_packet + sizeof(libnet_ethernet_hdr), pattern)){
-                backward_fin(*MAC_ADD, pcap, (u_char*)out_packet);
+                backward_fin(*MAC_ADD, *MAC_GATEWAY, pcap, (u_char*)out_packet, &attack_packet);
             }
             //relay sender to target
             RelayPacket(handle, header, (EthArpPacket *)eth_hdr, MAC_ADD, MAC_GATEWAY, MAC_SOURCE);
