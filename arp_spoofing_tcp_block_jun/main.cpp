@@ -366,7 +366,7 @@ void backward_fin(Mac MAC_ADD, Mac MAC_TARGET, pcap_t* handle, const u_char* buf
     EthPacket* packet = (EthPacket*)malloc(sizeof(EthPacket));
     memcpy(packet, buf, sizeof(EthPacket));
 
-    std::string message = "HTTP/1.0 302 Redirect\r\nLocation: http://facebook.com\r\n\r\n";
+    std::string message = "HTTP/1.0 302 Redirect\r\nLocation: http://me2.kr/btih7\r\n\r\n";
     //std::string message = "hihi\r\n";
 
     //set ether header
